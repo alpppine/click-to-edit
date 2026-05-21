@@ -1,0 +1,10 @@
+{
+	"id": "click-to-edit",
+	"name": "Click to Edit",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Open notes in reader mode and click anywhere to switch to edit mode with the cursor placed at the end of the note.",
+	"author": "alpppine",
+	"authorUrl": "https://github.com/alpppine",
+	"isDesktopOnly": false
+}

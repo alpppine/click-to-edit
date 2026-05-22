@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin, TFile } from "obsidian";
+import { MarkdownView, Platform, Plugin, TFile } from "obsidian";
 import type { ClickToEditSettings } from "./settings";
 
 export function registerReaderModeOnOpen(
@@ -8,6 +8,7 @@ export function registerReaderModeOnOpen(
 	plugin.registerEvent(
 		plugin.app.workspace.on("file-open", async (file) => {
 			const settings = getSettings();
+			if (settings.disableOnMobile && Platform.isMobile) return;
 			if (!settings.openInReaderMode) return;
 			if (!file || !(file instanceof TFile)) return;
 			if (file.extension !== "md") return;

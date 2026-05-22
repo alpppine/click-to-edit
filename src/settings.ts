@@ -7,12 +7,14 @@ export interface ClickToEditSettings {
 	openInReaderMode: boolean;
 	skipEmptyNotes: boolean;
 	cursorPosition: CursorPosition;
+	disableOnMobile: boolean;
 }
 
 export const DEFAULT_SETTINGS: ClickToEditSettings = {
 	openInReaderMode: true,
 	skipEmptyNotes: true,
 	cursorPosition: "bottom",
+	disableOnMobile: true,
 };
 
 export class ClickToEditSettingTab extends PluginSettingTab {
@@ -51,6 +53,20 @@ export class ClickToEditSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.skipEmptyNotes)
 					.onChange(async (value) => {
 						this.plugin.settings.skipEmptyNotes = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Disable on mobile")
+			.setDesc(
+				"Don't auto-switch to reader mode or click-to-edit on mobile devices."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.disableOnMobile)
+					.onChange(async (value) => {
+						this.plugin.settings.disableOnMobile = value;
 						await this.plugin.saveSettings();
 					})
 			);

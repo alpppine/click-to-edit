@@ -1,6 +1,6 @@
 {
 	"name": "click-to-edit",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "Obsidian plugin: open notes in reader mode and click to switch to edit mode.",
 	"main": "main.js",
 	"type": "module",

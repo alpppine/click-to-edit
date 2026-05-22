@@ -1,6 +1,7 @@
 import {
 	type Editor,
 	MarkdownView,
+	Platform,
 	Plugin,
 	type WorkspaceLeaf,
 } from "obsidian";
@@ -52,6 +53,7 @@ function handleClick(
 	settings: ClickToEditSettings,
 	evt: MouseEvent
 ): void {
+	if (settings.disableOnMobile && Platform.isMobile) return;
 	if (evt.button !== 0) return;
 	if (evt.defaultPrevented) return;
 	if (evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) return;

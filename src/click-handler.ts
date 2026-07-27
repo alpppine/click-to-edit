@@ -7,6 +7,8 @@ import {
 } from "obsidian";
 import type { ClickToEditSettings } from "./settings";
 
+type ClickTrigger = ClickToEditSettings["clickTrigger"];
+
 const INTERACTIVE_SELECTOR = [
 	"a",
 	".internal-link",
@@ -43,7 +45,14 @@ export function registerClickToEdit(
 		document,
 		"click",
 		(evt: MouseEvent) => {
-			handleClick(plugin, getSettings(), evt);
+			handleClick(plugin, getSettings(), evt, "single");
+		}
+	);
+	plugin.registerDomEvent(
+		document,
+		"dblclick",
+		(evt: MouseEvent) => {
+			handleClick(plugin, getSettings(), evt, "double");
 		}
 	);
 }
@@ -51,19 +60,34 @@ export function registerClickToEdit(
 function handleClick(
 	plugin: Plugin,
 	settings: ClickToEditSettings,
-	evt: MouseEvent
+	evt: MouseEvent,
+	trigger: ClickTrigger
 ): void {
 	if (settings.disableOnMobile && Platform.isMobile) return;
+	if (settings.clickTrigger !== trigger) return;
 	if (evt.button !== 0) return;
 	if (evt.defaultPrevented) return;
 	if (evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) return;
 
 	const target = evt.target;
 	if (!(target instanceof HTMLElement)) return;
+
+	const sourceContainer = target.closest(".markdown-source-view");
+	if (trigger === "double" && sourceContainer) {
+		switchSourceToReader(plugin, target, sourceContainer, evt);
+		return;
+	}
+
 	if (target.closest(INTERACTIVE_SELECTOR)) return;
 
 	const selection = target.ownerDocument.getSelection();
-	if (selection && selection.toString().length > 0) return;
+	if (
+		trigger === "single" &&
+		selection &&
+		selection.toString().length > 0
+	) {
+		return;
+	}
 
 	const previewContainer = target.closest(".markdown-reading-view");
 	if (!previewContainer) return;
@@ -75,6 +99,10 @@ function handleClick(
 	const state = view.getState();
 	if (state.mode !== "preview") return;
 
+	// A double click normally selects a word. Once it is confirmed as the
+	// configured trigger, suppress that default before replacing the preview.
+	if (trigger === "double") evt.preventDefault();
+
 	// Capture an anchor synchronously, while the rendered DOM is still mounted.
 	const anchor = settings.cursorPosition === "click"
 		? captureClickAnchor(evt, previewContainer)
@@ -85,6 +113,35 @@ function handleClick(
 		.then(() => {
 			placeCursor(view.editor, settings.cursorPosition, anchor);
 		});
+}
+
+function switchSourceToReader(
+	plugin: Plugin,
+	target: HTMLElement,
+	sourceContainer: Element,
+	evt: MouseEvent
+): void {
+	const interactiveTarget = target.closest(INTERACTIVE_SELECTOR);
+	if (
+		interactiveTarget &&
+		!interactiveTarget.matches('[contenteditable="true"]')
+	) {
+		return;
+	}
+
+	const leaf = findLeafForElement(plugin, sourceContainer);
+	if (!leaf) return;
+
+	const view = leaf.view as MarkdownView;
+	const state = view.getState();
+	if (state.mode !== "source") return;
+
+	// Prevent the editor from selecting a word before its DOM is replaced.
+	evt.preventDefault();
+	void view.setState(
+		{ ...state, mode: "preview" },
+		{ history: false }
+	);
 }
 
 function findLeafForElement(

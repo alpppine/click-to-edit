@@ -1,24 +1,25 @@
 # Click to Edit
 
 An Obsidian plugin that makes notes feel more like a wiki: every note opens in
-**reader mode** by default, and a single click anywhere in the note flips it
-into **edit mode** with the cursor placed at the **end of the note** (or
-wherever you prefer).
+**reader mode** by default, and a single or double click anywhere in the note
+flips it into **edit mode** with the cursor placed at the **end of the note**
+(or wherever you prefer).
 
 ## Features
 
 - **Reader mode by default** &mdash; whenever a note is opened, it is
   automatically switched to reader (preview) mode.
-- **Click anywhere to edit** &mdash; a single click in the rendered note flips
-  the view into edit (source) mode, with the cursor placed at the end of the
-  note so you can immediately start typing.
+- **Click anywhere to edit** &mdash; a single click (default) or double click
+  in the rendered note flips the view into edit (source) mode, with the cursor
+  placed at the end of the note so you can immediately start typing. In
+  double-click mode, double-click the editor again to return to reader mode.
 - **Configurable cursor placement** &mdash; choose end of note (default), top
   of note, or as close to where you clicked as possible.
 - **Respects normal interactions** &mdash; clicks on links, tags, task
   checkboxes, fold buttons, and other interactive elements still behave
   normally instead of triggering edit mode.
-- **Keeps text selection** &mdash; if you're selecting text in reader mode, the
-  plugin won't switch to edit until you release the selection.
+- **Keeps text selection** &mdash; in single-click mode, selecting text in
+  reader mode won't switch the note to edit mode.
 
 ## Settings
 
@@ -27,6 +28,10 @@ Open **Settings &rarr; Community plugins &rarr; Click to Edit** to configure:
 - **Open notes in reader mode** &mdash; toggle the auto reader-mode behavior.
 - **Skip empty notes** &mdash; don't force reader mode on brand-new, empty
   notes (so creating a note still drops you straight into editing).
+- **Disable on mobile** &mdash; don't change modes automatically on mobile
+  devices (enabled by default).
+- **Click trigger** &mdash; choose a single click (default), or use double
+  clicks to toggle between reader and edit mode.
 - **Cursor position on edit** &mdash; choose between *Bottom of note* (default),
   *Top of note*, or *Where you clicked*.
 

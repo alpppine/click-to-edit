@@ -37,84 +37,52 @@ interface ClickAnchor {
 	offsetInSnippet: number;
 }
 
+/* global activeDocument -- Obsidian global tracking the focused window's document */
+
 const DOC_BOUND_ATTR = "data-click-to-edit-bound";
 
 export function registerClickToEdit(
 	plugin: Plugin,
 	getSettings: () => ClickToEditSettings
 ): void {
-	const boundContainers = new WeakSet<HTMLElement>();
-	const handledEvents = new WeakSet<Event>();
-
-	// Two independent delivery paths guard against Obsidian's pop-out window
-	// lifecycle; a per-event guard keeps a click from being handled twice.
-	const onEvent = (evt: MouseEvent, trigger: ClickTrigger): void => {
-		if (handledEvents.has(evt)) return;
-		handledEvents.add(evt);
-		handleClick(plugin, getSettings(), evt, trigger);
-	};
-
-	const listen = (el: HTMLElement | Document): void => {
-		// The Document and HTMLElement overloads of registerDomEvent are
-		// identical at runtime; collapse them behind one cast.
-		const target = el as HTMLElement;
-		plugin.registerDomEvent(target, "click", (evt: MouseEvent) => {
-			onEvent(evt, "single");
-		});
-		plugin.registerDomEvent(target, "dblclick", (evt: MouseEvent) => {
-			onEvent(evt, "double");
-		});
-	};
-
-	// Path 1: listeners on each view's own container element. Element-bound
-	// listeners travel with the leaf DOM when it is adopted into a pop-out
-	// document.
-	const bindView = (view: MarkdownView): void => {
-		const containerEl = view.containerEl;
-		if (boundContainers.has(containerEl)) return;
-		boundContainers.add(containerEl);
-		listen(containerEl);
-	};
-
-	// Path 2: listeners on each window's document. Creating a pop-out can
-	// rebuild its document, which erases listeners but also replaces the
-	// documentElement carrying the marker attribute — so a wiped document
-	// re-registers on the next workspace event instead of being deduped
-	// against a stale identity.
+	// One listener pair per window document; clicks anywhere in a window
+	// bubble to its document, so no per-view listeners are needed. The
+	// dedup key is a marker attribute rather than a WeakSet: creating a
+	// pop-out can rebuild its document in place (same Document identity,
+	// listeners wiped), and the rebuild also replaces the documentElement
+	// carrying the marker — so a wiped document re-registers on the next
+	// bind opportunity instead of being deduped against a stale identity.
 	const bindDocument = (doc: Document): void => {
 		if (doc.documentElement.hasAttribute(DOC_BOUND_ATTR)) return;
 		doc.documentElement.setAttribute(DOC_BOUND_ATTR, "1");
-		listen(doc);
-	};
-
-	const bindLeafView = (view: MarkdownView): void => {
-		bindView(view);
-		bindDocument(view.containerEl.ownerDocument);
-	};
-
-	const bindEverything = (): void => {
-		bindDocument(document);
-		plugin.app.workspace.iterateAllLeaves((leaf) => {
-			if (leaf.view instanceof MarkdownView) bindLeafView(leaf.view);
+		plugin.registerDomEvent(doc, "click", (evt: MouseEvent) => {
+			handleClick(plugin, getSettings(), evt, "single");
+		});
+		plugin.registerDomEvent(doc, "dblclick", (evt: MouseEvent) => {
+			handleClick(plugin, getSettings(), evt, "double");
 		});
 	};
 
-	// Deferred (background) leaves get a fresh MarkdownView and container
-	// when they load, so rebind on every event that can create or reveal a
-	// view. active-leaf-change also fires when a pane gains focus, which
-	// happens on mousedown — before the resulting click is dispatched.
-	plugin.app.workspace.onLayoutReady(bindEverything);
-	plugin.registerEvent(
-		plugin.app.workspace.on("layout-change", bindEverything)
-	);
-	plugin.registerEvent(
-		plugin.app.workspace.on("active-leaf-change", (leaf) => {
-			if (leaf?.view instanceof MarkdownView) bindLeafView(leaf.view);
-		})
-	);
+	plugin.app.workspace.onLayoutReady(() => {
+		bindDocument(document);
+	});
 	plugin.registerEvent(
 		plugin.app.workspace.on("window-open", (workspaceWindow) => {
 			bindDocument(workspaceWindow.doc);
+		})
+	);
+	// Repair hooks for the pop-out rebuild case; cheap no-ops once bound.
+	// active-leaf-change fires when a pane gains focus, which happens on
+	// mousedown — before the resulting click is dispatched. layout-change
+	// covers rebuilds that happen without a leaf change.
+	plugin.registerEvent(
+		plugin.app.workspace.on("active-leaf-change", (leaf) => {
+			if (leaf) bindDocument(leaf.view.containerEl.ownerDocument);
+		})
+	);
+	plugin.registerEvent(
+		plugin.app.workspace.on("layout-change", () => {
+			bindDocument(activeDocument);
 		})
 	);
 }

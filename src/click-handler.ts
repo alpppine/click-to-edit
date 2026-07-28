@@ -5,7 +5,9 @@ import {
 	Plugin,
 	type WorkspaceLeaf,
 } from "obsidian";
-import type { ClickToEditSettings } from "./settings";
+import type { ClickToEditSettings, ClickTrigger } from "./settings";
+
+const CONTENTEDITABLE_SELECTOR = '[contenteditable="true"]';
 
 const INTERACTIVE_SELECTOR = [
 	"a",
@@ -20,7 +22,7 @@ const INTERACTIVE_SELECTOR = [
 	".callout-fold",
 	".copy-code-button",
 	".embed-title",
-	'[contenteditable="true"]',
+	CONTENTEDITABLE_SELECTOR,
 ].join(",");
 
 // How much surrounding text we capture around the click point.
@@ -35,38 +37,137 @@ interface ClickAnchor {
 	offsetInSnippet: number;
 }
 
+const DOC_BOUND_ATTR = "data-click-to-edit-bound";
+
 export function registerClickToEdit(
 	plugin: Plugin,
 	getSettings: () => ClickToEditSettings
 ): void {
-	plugin.registerDomEvent(
-		document,
-		"click",
-		(evt: MouseEvent) => {
-			handleClick(plugin, getSettings(), evt);
-		}
+	const boundContainers = new WeakSet<HTMLElement>();
+	const handledEvents = new WeakSet<Event>();
+
+	// Two independent delivery paths guard against Obsidian's pop-out window
+	// lifecycle; a per-event guard keeps a click from being handled twice.
+	const onEvent = (evt: MouseEvent, trigger: ClickTrigger): void => {
+		if (handledEvents.has(evt)) return;
+		handledEvents.add(evt);
+		handleClick(plugin, getSettings(), evt, trigger);
+	};
+
+	const listen = (el: HTMLElement | Document): void => {
+		// The Document and HTMLElement overloads of registerDomEvent are
+		// identical at runtime; collapse them behind one cast.
+		const target = el as HTMLElement;
+		plugin.registerDomEvent(target, "click", (evt: MouseEvent) => {
+			onEvent(evt, "single");
+		});
+		plugin.registerDomEvent(target, "dblclick", (evt: MouseEvent) => {
+			onEvent(evt, "double");
+		});
+	};
+
+	// Path 1: listeners on each view's own container element. Element-bound
+	// listeners travel with the leaf DOM when it is adopted into a pop-out
+	// document.
+	const bindView = (view: MarkdownView): void => {
+		const containerEl = view.containerEl;
+		if (boundContainers.has(containerEl)) return;
+		boundContainers.add(containerEl);
+		listen(containerEl);
+	};
+
+	// Path 2: listeners on each window's document. Creating a pop-out can
+	// rebuild its document, which erases listeners but also replaces the
+	// documentElement carrying the marker attribute — so a wiped document
+	// re-registers on the next workspace event instead of being deduped
+	// against a stale identity.
+	const bindDocument = (doc: Document): void => {
+		if (doc.documentElement.hasAttribute(DOC_BOUND_ATTR)) return;
+		doc.documentElement.setAttribute(DOC_BOUND_ATTR, "1");
+		listen(doc);
+	};
+
+	const bindLeafView = (view: MarkdownView): void => {
+		bindView(view);
+		bindDocument(view.containerEl.ownerDocument);
+	};
+
+	const bindEverything = (): void => {
+		bindDocument(document);
+		plugin.app.workspace.iterateAllLeaves((leaf) => {
+			if (leaf.view instanceof MarkdownView) bindLeafView(leaf.view);
+		});
+	};
+
+	// Deferred (background) leaves get a fresh MarkdownView and container
+	// when they load, so rebind on every event that can create or reveal a
+	// view. active-leaf-change also fires when a pane gains focus, which
+	// happens on mousedown — before the resulting click is dispatched.
+	plugin.app.workspace.onLayoutReady(bindEverything);
+	plugin.registerEvent(
+		plugin.app.workspace.on("layout-change", bindEverything)
+	);
+	plugin.registerEvent(
+		plugin.app.workspace.on("active-leaf-change", (leaf) => {
+			if (leaf?.view instanceof MarkdownView) bindLeafView(leaf.view);
+		})
+	);
+	plugin.registerEvent(
+		plugin.app.workspace.on("window-open", (workspaceWindow) => {
+			bindDocument(workspaceWindow.doc);
+		})
 	);
 }
 
 function handleClick(
 	plugin: Plugin,
 	settings: ClickToEditSettings,
-	evt: MouseEvent
+	evt: MouseEvent,
+	trigger: ClickTrigger
 ): void {
 	if (settings.disableOnMobile && Platform.isMobile) return;
+	if (settings.clickTrigger !== trigger) return;
 	if (evt.button !== 0) return;
 	if (evt.defaultPrevented) return;
 	if (evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) return;
 
 	const target = evt.target;
-	if (!(target instanceof HTMLElement)) return;
-	if (target.closest(INTERACTIVE_SELECTOR)) return;
-
-	const selection = target.ownerDocument.getSelection();
-	if (selection && selection.toString().length > 0) return;
+	if (!isElement(target)) return;
 
 	const previewContainer = target.closest(".markdown-reading-view");
-	if (!previewContainer) return;
+	if (previewContainer) {
+		switchReaderToSource(
+			plugin,
+			settings,
+			target,
+			previewContainer,
+			evt,
+			trigger
+		);
+		return;
+	}
+
+	// In double-click mode the gesture is a toggle: a double click inside
+	// the editor switches back to reading view.
+	if (trigger === "double") switchSourceToReader(plugin, target, evt);
+}
+
+function switchReaderToSource(
+	plugin: Plugin,
+	settings: ClickToEditSettings,
+	target: Element,
+	previewContainer: Element,
+	evt: MouseEvent,
+	trigger: ClickTrigger
+): void {
+	if (target.closest(INTERACTIVE_SELECTOR)) return;
+
+	// Refuse to switch modes while any text is selected. Double clicks are
+	// exempt: the double click itself selects a word.
+	if (trigger === "single") {
+		const selection = target.ownerDocument.getSelection();
+		if (selection && selection.toString().length > 0) return;
+	}
 
 	const leaf = findLeafForElement(plugin, previewContainer);
 	if (!leaf) return;
@@ -74,6 +175,10 @@ function handleClick(
 	const view = leaf.view as MarkdownView;
 	const state = view.getState();
 	if (state.mode !== "preview") return;
+
+	// A double click normally selects a word. Once it is confirmed as the
+	// configured trigger, suppress that default before replacing the preview.
+	if (trigger === "double") evt.preventDefault();
 
 	// Capture an anchor synchronously, while the rendered DOM is still mounted.
 	const anchor = settings.cursorPosition === "click"
@@ -85,6 +190,40 @@ function handleClick(
 		.then(() => {
 			placeCursor(view.editor, settings.cursorPosition, anchor);
 		});
+}
+
+function switchSourceToReader(
+	plugin: Plugin,
+	target: Element,
+	evt: MouseEvent
+): void {
+	const sourceContainer = target.closest(".markdown-source-view");
+	if (!sourceContainer) return;
+
+	// The editor surface itself is contenteditable; only bail on real
+	// controls (checkboxes, fold arrows, buttons, ...) so double clicks on
+	// text still toggle back to reading view.
+	const interactive = target.closest(INTERACTIVE_SELECTOR);
+	if (interactive && !interactive.matches(CONTENTEDITABLE_SELECTOR)) return;
+
+	const leaf = findLeafForElement(plugin, sourceContainer);
+	if (!leaf) return;
+
+	const view = leaf.view as MarkdownView;
+	const state = view.getState();
+	if (state.mode !== "source") return;
+
+	// Prevent the editor from selecting a word before its DOM is replaced.
+	evt.preventDefault();
+	void view.setState({ ...state, mode: "preview" }, { history: false });
+}
+
+// No instanceof: each window has its own DOM constructors, and nodes moved
+// into a pop-out keep the prototype chain of the window that CREATED them,
+// so neither window's Element class matches every node. nodeType is the only
+// realm-independent check.
+function isElement(target: EventTarget | null): target is Element {
+	return (target as Node | null)?.nodeType === Node.ELEMENT_NODE;
 }
 
 function findLeafForElement(

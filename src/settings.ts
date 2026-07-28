@@ -2,10 +2,12 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type ClickToEditPlugin from "./main";
 
 export type CursorPosition = "bottom" | "top" | "click";
+export type ClickTrigger = "single" | "double";
 
 export interface ClickToEditSettings {
 	openInReaderMode: boolean;
 	skipEmptyNotes: boolean;
+	clickTrigger: ClickTrigger;
 	cursorPosition: CursorPosition;
 	disableOnMobile: boolean;
 }
@@ -13,6 +15,7 @@ export interface ClickToEditSettings {
 export const DEFAULT_SETTINGS: ClickToEditSettings = {
 	openInReaderMode: true,
 	skipEmptyNotes: true,
+	clickTrigger: "single",
 	cursorPosition: "bottom",
 	disableOnMobile: true,
 };
@@ -67,6 +70,22 @@ export class ClickToEditSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.disableOnMobile)
 					.onChange(async (value) => {
 						this.plugin.settings.disableOnMobile = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Click trigger")
+			.setDesc(
+				"Use a single click to edit, or double clicks to toggle between reader and edit mode."
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("single", "Single click")
+					.addOption("double", "Double click")
+					.setValue(this.plugin.settings.clickTrigger)
+					.onChange(async (value: ClickTrigger) => {
+						this.plugin.settings.clickTrigger = value;
 						await this.plugin.saveSettings();
 					})
 			);

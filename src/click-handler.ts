@@ -53,8 +53,13 @@ export function registerClickToEdit(
 	// carrying the marker — so a wiped document re-registers on the next
 	// bind opportunity instead of being deduped against a stale identity.
 	const bindDocument = (doc: Document): void => {
-		if (doc.documentElement.hasAttribute(DOC_BOUND_ATTR)) return;
-		doc.documentElement.setAttribute(DOC_BOUND_ATTR, "1");
+		const root = doc.documentElement;
+		if (root.hasAttribute(DOC_BOUND_ATTR)) return;
+		root.setAttribute(DOC_BOUND_ATTR, "1");
+		// Clear the marker on unload, alongside the listeners, so that a
+		// re-enabled or updated plugin binds again instead of skipping
+		// every document as "already bound".
+		plugin.register(() => root.removeAttribute(DOC_BOUND_ATTR));
 		plugin.registerDomEvent(doc, "click", (evt: MouseEvent) => {
 			handleClick(plugin, getSettings(), evt, "single");
 		});

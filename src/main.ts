@@ -42,6 +42,13 @@ export default class ClickToEditPlugin extends Plugin {
 			| Partial<ClickToEditSettings>
 			| null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
+		// An unrecognised trigger would make both click handlers bail.
+		if (
+			this.settings.clickTrigger !== "single" &&
+			this.settings.clickTrigger !== "double"
+		) {
+			this.settings.clickTrigger = DEFAULT_SETTINGS.clickTrigger;
+		}
 	}
 
 	async saveSettings(): Promise<void> {

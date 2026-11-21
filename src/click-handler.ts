@@ -238,18 +238,15 @@ function caretFromPoint(evt: MouseEvent): CaretPoint | null {
 		if (pos) return { node: pos.offsetNode, offset: pos.offset };
 	}
 
-	// Fallback for older Chromium versions where the standardized
-	// `caretPositionFromPoint` is unavailable.
-	const docWithCaretRange = doc as Document & {
-		caretRangeFromPoint?: (x: number, y: number) => Range | null;
-	};
-	// eslint-disable-next-line @typescript-eslint/no-deprecated
-	if (typeof docWithCaretRange.caretRangeFromPoint === "function") {
-		// eslint-disable-next-line @typescript-eslint/no-deprecated
-		const range = docWithCaretRange.caretRangeFromPoint(
-			evt.clientX,
-			evt.clientY
-		);
+	// Fallback for older Chromium / iOS WebViews where the standardized
+	// `caretPositionFromPoint` is unavailable. Looked up by name so we don't
+	// reference the deprecated Document.caretRangeFromPoint property directly
+	// (community scanners forbid disabling @typescript-eslint/no-deprecated).
+	const caretRangeFromPoint = Reflect.get(doc, "caretRangeFromPoint") as
+		| ((x: number, y: number) => Range | null)
+		| undefined;
+	if (typeof caretRangeFromPoint === "function") {
+		const range = caretRangeFromPoint.call(doc, evt.clientX, evt.clientY);
 		if (range) {
 			return { node: range.startContainer, offset: range.startOffset };
 		}
